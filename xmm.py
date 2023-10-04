@@ -37,6 +37,8 @@ import argparse
 import typing
 import io
 
+import libxmm
+
 Label = str
 Var = str
 Const = str
@@ -282,20 +284,6 @@ class FrameStack(list[Frame]):
         return assertion
 
 
-def apply_subst(stmt: Stmt, subst: dict[Var, Stmt]) -> Stmt:
-    """Return the token list resulting from the given substitution
-    (dictionary) applied to the given statement (token list).
-    """
-    result = []
-    for tok in stmt:
-        if tok in subst:
-            result += subst[tok]
-        else:
-            result.append(tok)
-    vprint(20, 'Applying subst', subst, 'to stmt', stmt, ':', result)
-    return result
-
-
 class MM:
     """Class of ("abstract syntax trees" describing) Metamath databases."""
 
@@ -496,7 +484,7 @@ class MM:
             vprint(15, 'Substitution to apply:', subst)
             for h in e_hyps0:
                 entry = stack[sp]
-                subst_h = apply_subst(h, subst)
+                subst_h = libxmm.apply_subst(h, subst)
                 if entry != subst_h:
                     raise MMError(("Proof stack entry {} does not match " +
                                    "essential hypothesis {}.")
@@ -513,7 +501,7 @@ class MM:
                         raise MMError("Disjoint variable violation: " +
                                       "{} , {}".format(x0, y0))
             del stack[len(stack) - npop:]
-            stack.append(apply_subst(conclusion0, subst))
+            stack.append(libxmm.apply_subst(conclusion0, subst))
         vprint(12, 'Proof stack:', stack)
 
     def treat_normal_proof(self, proof: list[str]) -> list[Stmt]:
