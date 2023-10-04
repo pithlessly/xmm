@@ -193,11 +193,7 @@ class Frame:
         self.d: set[Dv] = set()
         self.f: list[Fhyp] = []
         self.f_labels: dict[Var, Label] = {}
-        self.e: list[Ehyp] = []
-        self.e_labels: dict[tuple[Symbol, ...], Label] = {}
-        # Note: both self.e and self.e_labels are needed since the keys of
-        # self.e_labels form a set, but the order and repetitions of self.e
-        # are needed.
+        self.e: list[tuple[Label, Ehyp]] = []
 
 
 class FrameStack(list[Frame]):
@@ -214,9 +210,7 @@ class FrameStack(list[Frame]):
         top.
         """
         frame = self[-1]
-        frame.e.append(stmt)
-        frame.e_labels[tuple(stmt)] = label
-        # conversion to tuple since dictionary keys must be hashable
+        frame.e.append((label, stmt))
 
     def add_d(self, varlist: list[Var]) -> None:
         """Add a disjoint variable condition (ordered pair of variables) to
@@ -251,13 +245,11 @@ class FrameStack(list[Frame]):
         """Return the label of the (earliest) active essential hypothesis with
         the given statement.
         """
-        stmt_t = tuple(stmt)
         for frame in self:
-            try:
-                return frame.e_labels[stmt_t]
-            except KeyError:
-                pass
-        raise MMKeyError(stmt_t)
+            for label, hyp_stmt in reversed(frame.e):
+                if stmt == hyp_stmt:
+                    return label
+        raise MMKeyError(tuple(stmt))
 
     def find_vars(self, stmt: Stmt) -> set[Var]:
         """Return the set of variables in the given statement."""
@@ -268,7 +260,7 @@ class FrameStack(list[Frame]):
         hypotheses, essential hypotheses, conclusion) describing the given
         assertion.
         """
-        e_hyps = [eh for fr in self for eh in fr.e]
+        e_hyps = [eh for fr in self for _, eh in fr.e]
         mand_vars = {tok for hyp in itertools.chain(e_hyps, [stmt])
                      for tok in hyp if self.lookup_v(tok)}
         dvs = {(x, y) for fr in self for (x, y)
