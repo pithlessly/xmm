@@ -1,5 +1,6 @@
 libxmm.so: libxmm_functions.zig libxmm_main.c
 	zig build-lib \
+		$(ZIGFLAGS) \
 		-dynamic \
 		-fallow-shlib-undefined \
 		-femit-bin=$@ \
