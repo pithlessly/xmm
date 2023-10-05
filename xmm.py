@@ -46,7 +46,7 @@ Stmttype = typing.Literal["$c", "$v", "$f", "$e", "$a", "$p", "$d", "$="]
 StringOption = typing.Optional[str]
 Symbol = typing.Union[Var, Const]
 Stmt = list[Symbol]
-Ehyp = tuple[Label, Stmt]
+Ehyp = tuple[Stmt]
 Fhyp = tuple[Var, Const]
 Dv = tuple[Var, Var]
 Assertion = tuple[set[Dv], list[Fhyp], list[Ehyp], Stmt]
@@ -250,8 +250,8 @@ class FrameStack(list[Frame]):
         hypotheses, essential hypotheses, conclusion) describing the given
         assertion.
         """
-        e_hyps = [eh for fr in self for eh in fr.e]
-        mand_vars = {tok for hyp in itertools.chain((s for _, s in e_hyps), [stmt])
+        e_hyps = [eh for fr in self for _, eh in fr.e]
+        mand_vars = {tok for hyp in itertools.chain(e_hyps, [stmt])
                      for tok in hyp if self.lookup_v(tok)}
         dvs = {(x, y) for fr in self for (x, y)
                in fr.d if x in mand_vars and y in mand_vars}
@@ -464,7 +464,7 @@ class MM:
                 subst[var] = entry[1:]
                 sp += 1
             vprint(15, 'Substitution to apply:', subst)
-            for _, h in e_hyps0:
+            for h in e_hyps0:
                 entry = stack[sp]
                 subst_h = libxmm.apply_subst(h, subst)
                 if entry != subst_h:
@@ -508,7 +508,7 @@ class MM:
         label_stmts = [
             # implicit hypotheses
             *(('$f', list(vc)) for vc in f_hyps),
-            *(('$e', stmt)     for _, stmt in e_hyps),
+            *(('$e', stmt)     for stmt in e_hyps),
             # labels which will be referenced later
             *(self.labels[label] for label in proof[1:idx_bloc]),
         ]
