@@ -193,7 +193,7 @@ class Frame:
         self.d: set[Dv] = set()
         self.f: list[Fhyp] = []
         self.f_labels: dict[Var, Label] = {}
-        self.e: list[tuple[Label, Ehyp]] = []
+        self.e: list[Ehyp] = []
 
 
 class FrameStack(list[Frame]):
@@ -210,7 +210,7 @@ class FrameStack(list[Frame]):
         top.
         """
         frame = self[-1]
-        frame.e.append((label, stmt))
+        frame.e.append(stmt)
 
     def add_d(self, varlist: list[Var]) -> None:
         """Add a disjoint variable condition (ordered pair of variables) to
@@ -250,7 +250,7 @@ class FrameStack(list[Frame]):
         hypotheses, essential hypotheses, conclusion) describing the given
         assertion.
         """
-        e_hyps = [eh for fr in self for _, eh in fr.e]
+        e_hyps = [eh for fr in self for eh in fr.e]
         mand_vars = {tok for hyp in itertools.chain(e_hyps, [stmt])
                      for tok in hyp if self.lookup_v(tok)}
         dvs = {(x, y) for fr in self for (x, y)
