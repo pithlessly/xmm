@@ -46,7 +46,7 @@ Stmttype = typing.Literal["$c", "$v", "$f", "$e", "$a", "$p", "$d", "$="]
 StringOption = typing.Optional[str]
 Symbol = typing.Union[Var, Const]
 Stmt = list[Symbol]
-Ehyp = Stmt
+Ehyp = tuple[Label, Stmt]
 Fhyp = tuple[Var, Const]
 Dv = tuple[Var, Var]
 Assertion = tuple[set[Dv], list[Fhyp], list[Ehyp], Stmt]
@@ -241,16 +241,6 @@ class FrameStack(list[Frame]):
                 pass
         return None  # Variable is not actively typed
 
-    def lookup_e(self, stmt: Stmt) -> Label:
-        """Return the label of the (earliest) active essential hypothesis with
-        the given statement.
-        """
-        for frame in self:
-            for label, hyp_stmt in reversed(frame.e):
-                if stmt == hyp_stmt:
-                    return label
-        raise MMKeyError(tuple(stmt))
-
     def find_vars(self, stmt: Stmt) -> set[Var]:
         """Return the set of variables in the given statement."""
         return {x for x in stmt if self.lookup_v(x)}
@@ -260,8 +250,8 @@ class FrameStack(list[Frame]):
         hypotheses, essential hypotheses, conclusion) describing the given
         assertion.
         """
-        e_hyps = [eh for fr in self for _, eh in fr.e]
-        mand_vars = {tok for hyp in itertools.chain(e_hyps, [stmt])
+        e_hyps = [eh for fr in self for eh in fr.e]
+        mand_vars = {tok for hyp in itertools.chain((s for _, s in e_hyps), [stmt])
                      for tok in hyp if self.lookup_v(tok)}
         dvs = {(x, y) for fr in self for (x, y)
                in fr.d if x in mand_vars and y in mand_vars}
@@ -474,7 +464,7 @@ class MM:
                 subst[var] = entry[1:]
                 sp += 1
             vprint(15, 'Substitution to apply:', subst)
-            for h in e_hyps0:
+            for _, h in e_hyps0:
                 entry = stack[sp]
                 subst_h = libxmm.apply_subst(h, subst)
                 if entry != subst_h:
@@ -513,15 +503,17 @@ class MM:
         """Return the proof stack once the given compressed proof for an
         assertion with the given $f and $e-hypotheses has been processed.
         """
-        # Preprocessing and building the lists of proof_ints and labels
-        flabels = [self.fs.lookup_f(v) for _, v in f_hyps]
-        elabels = [self.fs.lookup_e(s) for s in e_hyps]
-        plabels = flabels + elabels  # labels of implicit hypotheses
         idx_bloc = proof.index(')')  # index of end of label bloc
-        plabels += proof[1:idx_bloc]  # labels which will be referenced later
+        # Preprocessing and building the lists of proof_ints and statements
+        label_stmts = [
+            # implicit hypotheses
+            *(('$f', list(vc)) for vc in f_hyps),
+            *(('$e', stmt)     for _, stmt in e_hyps),
+            # labels which will be referenced later
+            *(self.labels[label] for label in proof[1:idx_bloc]),
+        ]
+        label_end = len(label_stmts)
         compressed_proof = ''.join(proof[idx_bloc + 1:])
-        vprint(5, 'Referenced labels:', plabels)
-        label_end = len(plabels)
         vprint(5, 'Number of referenced labels:', label_end)
         vprint(5, 'Compressed proof steps:', compressed_proof)
         vprint(5, 'Number of steps:', len(compressed_proof))
@@ -551,7 +543,7 @@ class MM:
             elif proof_int < label_end:
                 # proof_int denotes an implicit hypothesis or a label in the
                 # label bloc
-                self.treat_step(self.labels[plabels[proof_int] or ''], stack)
+                self.treat_step(label_stmts[proof_int], stack)
             elif proof_int >= label_end + n_saved_stmts:
                 MMError(
                     ("Not enough saved proof steps ({} saved but calling " +
