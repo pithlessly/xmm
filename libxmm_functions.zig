@@ -20,15 +20,15 @@ const FrameStack = struct {
 
     const Frame = struct {
         v_offset: usize,
-        dv: AutoHashMapUnmanaged([2]Tok, void),
+        dv_offset: usize,
         f: ArrayListUnmanaged(*PyObject), // FHyp
         f_labels: AutoHashMapUnmanaged(Tok, void),
         e: ArrayListUnmanaged(*PyObject), // EHyp
 
-        fn new(v_offset: usize) Frame {
+        fn new(v_offset: usize, dv_offset: usize) Frame {
             return .{
                 .v_offset = v_offset,
-                .dv = .{},
+                .dv_offset = dv_offset,
                 .f = .{},
                 .f_labels = .{},
                 .e = .{},
@@ -36,7 +36,6 @@ const FrameStack = struct {
         }
 
         fn deinit(self: *Frame, ally: Allocator) void {
-            self.dv.deinit(ally);
             for (self.f.items) |fhyp| py.Py_DecRef(fhyp);
             self.f.deinit(ally);
             self.f_labels.deinit(ally);
@@ -50,6 +49,7 @@ const FrameStack = struct {
     intern: StringHashMapUnmanaged(Tok),
     constants: AutoHashMapUnmanaged(Tok, void),
     vars: AutoArrayHashMapUnmanaged(Tok, void),
+    dvs: AutoArrayHashMapUnmanaged([2]Tok, void),
     frames: ArrayListUnmanaged(Frame),
 
     const Self = @This();
@@ -61,6 +61,7 @@ const FrameStack = struct {
             .intern = .{},
             .constants = .{},
             .vars = .{},
+            .dvs = .{},
             .frames = .{},
         };
     }
@@ -70,6 +71,7 @@ const FrameStack = struct {
         self.intern.deinit(ally);
         self.constants.deinit(ally);
         self.vars.deinit(ally);
+        self.dvs.deinit(ally);
         for (self.frames.items) |*fr| fr.deinit(self.ally);
         self.frames.deinit(ally);
         self.arena.deinit();
@@ -77,7 +79,8 @@ const FrameStack = struct {
 
     fn push(self: *Self) !void {
         const v_offset = self.vars.count();
-        try self.frames.append(self.ally, Frame.new(v_offset));
+        const dv_offset = self.dvs.count();
+        try self.frames.append(self.ally, Frame.new(v_offset, dv_offset));
     }
 
     fn top_frame(self: Self) !*Frame {
@@ -92,6 +95,7 @@ const FrameStack = struct {
         (try self.top_frame()).deinit(self.ally);
         const old_frame = self.frames.pop();
         self.vars.shrinkRetainingCapacity(old_frame.v_offset);
+        self.dvs.shrinkRetainingCapacity(old_frame.dv_offset);
     }
 
     fn tok(self: *Self, name: []const u8) !Tok {
@@ -123,6 +127,54 @@ const FrameStack = struct {
         try self.vars.putNoClobber(self.ally, v, {});
     }
 
+    fn lookup_d(self: *Self, tk1: []const u8, tk2: []const u8) !bool {
+        const v1 = try self.tok(tk1);
+        const v2 = try self.tok(tk2);
+        const k = if (v1 < v2) .{ v1, v2 } else .{ v2, v1 };
+        // TODO: skip checking if v1 == v2?
+        return self.dvs.contains(k);
+    }
+
+    fn add_d1(self: *Self, v1: Tok, v2: Tok) !void {
+        assert(v1 < v2);
+        const k = .{ v1, v2 };
+        try self.dvs.put(self.ally, k, {});
+    }
+
+    fn add_d(self: *Self, vars: *PyObject) !?void {
+        // add a collection of disjointnesses to the most recent frame.
+        // we insert all pairs separately - although this is O(N^2) work,
+        // the longest $d annotation in set.mm would only create 253
+        // entries, many of which are deduplicates.
+        // compare with an approach which creates "disjointness groups" for
+        // every '$d' statement and checks disjointness of two variables
+        // by seeing whether they have a disjointness group in common.
+        if (0 == py.PyList_CheckExact(vars)) {
+            py.PyErr_SetString(py.PyExc_TypeError, "expected vars to be a list");
+            return null;
+        }
+        const ally = self.ally;
+        const vs = try ally.alloc(Tok, @intCast(py.PyList_Size(vars)));
+        defer ally.free(vs);
+        for (vs, 0..) |*v, i| {
+            const var_ = py.PyList_GetItem(vars, @intCast(i));
+            if (0 == py.PyUnicode_CheckExact(var_)) {
+                py.PyErr_SetString(py.PyExc_TypeError, "expected vars[] to be str");
+                return null;
+            }
+            var size: isize = undefined;
+            const ptr = @as(?[*]const u8, py.PyUnicode_AsUTF8AndSize(var_, &size)) orelse return null;
+            v.* = try self.tok(ptr[0..@intCast(size)]);
+        }
+        std.mem.sort(Tok, vs, {}, std.sort.asc(Tok));
+        var i: usize = 0;
+        while (i < vs.len - 1) : (i += 1) {
+            var j = i;
+            while (j < vs.len) : (j += 1)
+                try self.add_d1(vs[i], vs[j]);
+        }
+    }
+
     fn dbg(self: *Self) void {
         const stdout = std.io.getStdOut().writer();
         {
@@ -145,6 +197,8 @@ const FrameStack = struct {
         export_FrameStack_method("pop", pop);
         export_FrameStack_method("lookup_v", lookup_v_tok);
         export_FrameStack_method("add_v", add_v);
+        export_FrameStack_method("lookup_d", lookup_d);
+        export_FrameStack_method("add_d", add_d);
         export_FrameStack_method("dbg", dbg);
     }
 
@@ -284,6 +338,12 @@ fn export_FrameStack_method(
                             py.PyErr_SetString(py.PyExc_RuntimeError, @errorName(err));
                             return null;
                         }
+                    },
+                    .Optional => |opt| {
+                        if (result) |some| {
+                            return convert(opt.child, some);
+                        } else
+                            return null;
                     },
                     else => @compileError("unsupported return type: " ++ @typeName(ReturnType)),
                 }

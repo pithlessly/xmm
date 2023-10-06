@@ -10,7 +10,7 @@ extern void      FrameStack_deinit (struct FrameStackPythonObject *);
 extern int       FrameStack_new    (struct FrameStackPythonObject *);
 
 #define FRAMESTACK_METHODS \
-    X(push) X(pop) X(lookup_v) X(add_v) X(dbg)
+    X(push) X(pop) X(lookup_v) X(add_v) X(lookup_d) X(add_d) X(dbg)
 
 #define X(METHOD) \
     extern PyObject *FrameStack_##METHOD(PyObject *, PyObject *);

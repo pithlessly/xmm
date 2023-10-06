@@ -212,20 +212,6 @@ class FrameStack(list[Frame]):
         frame = self[-1]
         frame.e.append(stmt)
 
-    def add_d(self, varlist: list[Var]) -> None:
-        """Add a disjoint variable condition (ordered pair of variables) to
-        the frame stack top.
-        """
-        self[-1].d.update((min(x, y), max(x, y))
-                          for x, y in itertools.product(varlist, varlist)
-                          if x != y)
-
-    def lookup_d(self, x: Var, y: Var) -> bool:
-        """Return whether the given ordered pair of tokens belongs to an
-        active disjoint variable statement.
-        """
-        return any((min(x, y), max(x, y)) in fr.d for fr in self)
-
     def lookup_f(self, var: Var) -> typing.Optional[Label]:
         """Return the label of the active floating hypothesis which types the
         given variable.
@@ -406,7 +392,7 @@ class MM:
                 self.labels[label] = ('$p', (dvs, f_hyps, e_hyps, conclusion))
                 label = None
             elif tok == '$d':
-                self.fs.add_d(self.read_non_p_stmt(tok, toks))
+                self.fs2.add_d(self.read_non_p_stmt(tok, toks))
             elif tok == '${':
                 self.read(toks)
             elif tok == '$)':
@@ -473,7 +459,7 @@ class MM:
                 vprint(16, 'V(x) =', x_vars)
                 vprint(16, 'V(y) =', y_vars)
                 for x0, y0 in itertools.product(x_vars, y_vars):
-                    if x0 == y0 or not self.fs.lookup_d(x0, y0):
+                    if x0 == y0 or not self.fs2.lookup_d(x0, y0):
                         raise MMError("Disjoint variable violation: " +
                                       "{} , {}".format(x0, y0))
             del stack[len(stack) - npop:]
