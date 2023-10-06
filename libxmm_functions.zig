@@ -136,7 +136,7 @@ const FrameStack = struct {
             stdout.writeAll("}\n") catch {};
         }
         {
-            stdout.writeAll("frames:\n<TODO: reimplement this>") catch {};
+            stdout.writeAll("frames:\n<TODO: reimplement this>\n") catch {};
         }
     }
 
@@ -376,5 +376,5 @@ export fn apply_subst(
 }
 
 export fn zig_hello() void {
-    std.io.getStdOut().writeAll("Initializing module; hello from Zig\n") catch {};
+    std.io.getStdOut().writeAll("Initializing libxmm; hello from Zig\n") catch {};
 }
