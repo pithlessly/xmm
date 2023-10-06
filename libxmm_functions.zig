@@ -21,26 +21,14 @@ const FrameStack = struct {
     const Frame = struct {
         v_offset: usize,
         dv_offset: usize,
+        e_offset: usize,
         f: ArrayListUnmanaged(*PyObject), // FHyp
         f_labels: AutoHashMapUnmanaged(Tok, void),
-        e: ArrayListUnmanaged(*PyObject), // EHyp
-
-        fn new(v_offset: usize, dv_offset: usize) Frame {
-            return .{
-                .v_offset = v_offset,
-                .dv_offset = dv_offset,
-                .f = .{},
-                .f_labels = .{},
-                .e = .{},
-            };
-        }
 
         fn deinit(self: *Frame, ally: Allocator) void {
             for (self.f.items) |fhyp| py.Py_DecRef(fhyp);
             self.f.deinit(ally);
             self.f_labels.deinit(ally);
-            for (self.e.items) |fhyp| py.Py_DecRef(fhyp);
-            self.e.deinit(ally);
         }
     };
 
@@ -50,6 +38,7 @@ const FrameStack = struct {
     constants: AutoHashMapUnmanaged(Tok, void),
     vars: AutoArrayHashMapUnmanaged(Tok, void),
     dvs: AutoArrayHashMapUnmanaged([2]Tok, void),
+    es: ArrayListUnmanaged(*PyObject), // EHyp
     frames: ArrayListUnmanaged(Frame),
 
     const Self = @This();
@@ -62,6 +51,7 @@ const FrameStack = struct {
             .constants = .{},
             .vars = .{},
             .dvs = .{},
+            .es = .{},
             .frames = .{},
         };
     }
@@ -72,15 +62,21 @@ const FrameStack = struct {
         self.constants.deinit(ally);
         self.vars.deinit(ally);
         self.dvs.deinit(ally);
+        for (self.es.items) |ehyp| py.Py_DecRef(ehyp);
+        self.es.deinit(ally);
         for (self.frames.items) |*fr| fr.deinit(self.ally);
         self.frames.deinit(ally);
         self.arena.deinit();
     }
 
     fn push(self: *Self) !void {
-        const v_offset = self.vars.count();
-        const dv_offset = self.dvs.count();
-        try self.frames.append(self.ally, Frame.new(v_offset, dv_offset));
+        try self.frames.append(self.ally, .{
+            .v_offset = self.vars.count(),
+            .dv_offset = self.dvs.count(),
+            .e_offset = self.es.items.len,
+            .f = .{},
+            .f_labels = .{},
+        });
     }
 
     fn top_frame(self: Self) !*Frame {
@@ -96,6 +92,8 @@ const FrameStack = struct {
         const old_frame = self.frames.pop();
         self.vars.shrinkRetainingCapacity(old_frame.v_offset);
         self.dvs.shrinkRetainingCapacity(old_frame.dv_offset);
+        for (self.es.items[old_frame.e_offset..]) |ehyp| py.Py_DecRef(ehyp);
+        self.es.shrinkRetainingCapacity(old_frame.e_offset);
     }
 
     fn tok(self: *Self, name: []const u8) !Tok {
@@ -175,6 +173,20 @@ const FrameStack = struct {
         }
     }
 
+    fn add_e(self: *Self, vars: *PyObject) !void {
+        py.Py_IncRef(vars);
+        try self.es.append(self.ally, vars);
+    }
+
+    fn all_ehyps(self: *Self) !*PyObject {
+        const result = py.PyList_New(@intCast(self.es.items.len));
+        for (self.es.items, 0..) |e, i| {
+            py.Py_IncRef(e);
+            _ = py.PyList_SetItem(result, @intCast(i), e);
+        }
+        return result;
+    }
+
     fn dbg(self: *Self) void {
         const stdout = std.io.getStdOut().writer();
         {
@@ -199,6 +211,8 @@ const FrameStack = struct {
         export_FrameStack_method("add_v", add_v);
         export_FrameStack_method("lookup_d", lookup_d);
         export_FrameStack_method("add_d", add_d);
+        export_FrameStack_method("add_e", add_e);
+        export_FrameStack_method("all_ehyps", all_ehyps);
         export_FrameStack_method("dbg", dbg);
     }
 

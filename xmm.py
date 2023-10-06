@@ -189,11 +189,8 @@ class Frame:
 
     def __init__(self) -> None:
         """Construct an empty frame."""
-        self.v: set[Var] = set()
-        self.d: set[Dv] = set()
         self.f: list[Fhyp] = []
         self.f_labels: dict[Var, Label] = {}
-        self.e: list[Ehyp] = []
 
 
 class FrameStack(list[Frame]):
@@ -204,13 +201,6 @@ class FrameStack(list[Frame]):
     def push(self) -> None:
         """Push an empty frame to the stack."""
         self.append(Frame())
-
-    def add_e(self, stmt: Stmt, label: Label) -> None:
-        """Add an essential hypothesis (token tuple) to the frame stack
-        top.
-        """
-        frame = self[-1]
-        frame.e.append(stmt)
 
     def lookup_f(self, var: Var) -> typing.Optional[Label]:
         """Return the label of the active floating hypothesis which types the
@@ -232,7 +222,7 @@ class FrameStack(list[Frame]):
         hypotheses, essential hypotheses, conclusion) describing the given
         assertion.
         """
-        e_hyps = [eh for fr in self for eh in fr.e]
+        e_hyps = self.fs2.all_ehyps()
         mand_vars = {tok for hyp in itertools.chain(e_hyps, [stmt])
                      for tok in hyp if self.fs2.lookup_v(tok)}
         dvs = {(x, y) for fr in self for (x, y)
@@ -371,7 +361,7 @@ class MM:
                 if not label:
                     raise MMError('$e must have label')
                 stmt = self.read_non_p_stmt(tok, toks)
-                self.fs.add_e(stmt, label)
+                self.fs2.add_e(stmt)
                 self.labels[label] = ('$e', stmt)
                 label = None
             elif tok == '$a':
