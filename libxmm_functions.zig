@@ -182,7 +182,7 @@ const FrameStack = struct {
             var iter = self.intern.iterator();
             var comma: []const u8 = "";
             while (iter.next()) |entry| {
-                stdout.print("{s}{s}={}", .{comma, entry.key_ptr.*, entry.value_ptr.*}) catch {};
+                stdout.print("{s}{s}={}", .{ comma, entry.key_ptr.*, entry.value_ptr.* }) catch {};
                 comma = ", ";
             }
             stdout.writeAll("}\n") catch {};
@@ -263,7 +263,7 @@ fn export_FrameStack_method(
                     all_params, // restarting from the beginning!
                     acc_pointers,
                     0, // cursor
-                    .{ receiver },
+                    .{receiver},
                 );
             }
             const param_type = params[0].type.?;
@@ -273,7 +273,7 @@ fn export_FrameStack_method(
                     return parse_tuple_and_build_args_and_call(
                         params[1..],
                         acc_format_str ++ "O",
-                        acc_pointers ++ .{ &obj },
+                        acc_pointers ++ .{&obj},
                         receiver,
                         args_tuple,
                     );
@@ -308,7 +308,9 @@ fn export_FrameStack_method(
             switch (params[0].type.?) {
                 *PyObject => {
                     return build_args_and_call(
-                        params[1..], pointers, cursor + 1,
+                        params[1..],
+                        pointers,
+                        cursor + 1,
                         acc_converted ++ .{pointers[cursor].*},
                     );
                 },
@@ -316,7 +318,9 @@ fn export_FrameStack_method(
                     const str_ptr = pointers[cursor].*;
                     const str_len = pointers[cursor + 1].*;
                     return build_args_and_call(
-                        params[1..], pointers, cursor + 2,
+                        params[1..],
+                        pointers,
+                        cursor + 2,
                         acc_converted ++ .{str_ptr[0..@intCast(str_len)]},
                     );
                 },
@@ -345,26 +349,21 @@ fn export_FrameStack_method(
                     .Optional => |opt| {
                         if (result) |some| {
                             return convert(opt.child, some);
-                        } else
-                            return null;
+                        } else return null;
                     },
                     else => @compileError("unsupported return type: " ++ @typeName(ReturnType)),
-                }
+                },
             }
         }
 
         fn shim(self: *PyObject, args_tuple: *PyObject) callconv(.C) ?*PyObject {
             const obj: *FrameStack.PythonObject = @ptrCast(self);
             const receiver = obj.payload.?;
-            const result = parse_tuple_and_build_args_and_call(
-                all_params,
-                "", .{},
-                receiver, args_tuple
-            ) orelse return null;
+            const result = parse_tuple_and_build_args_and_call(all_params, "", .{}, receiver, args_tuple) orelse return null;
             return convert(ReturnType, result);
         }
     };
-    @export(helpers.shim, .{ .name = "FrameStack_" ++ method_name});
+    @export(helpers.shim, .{ .name = "FrameStack_" ++ method_name });
 }
 
 export const FrameStackPythonObject_size: usize = @sizeOf(FrameStack.PythonObject);
