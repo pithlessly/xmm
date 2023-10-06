@@ -13,20 +13,21 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 const ArrayListUnmanaged = std.ArrayListUnmanaged;
 const StringHashMapUnmanaged = std.StringHashMapUnmanaged;
 const AutoHashMapUnmanaged = std.AutoHashMapUnmanaged;
+const AutoArrayHashMapUnmanaged = std.AutoArrayHashMapUnmanaged;
 
 const FrameStack = struct {
     const Tok = usize;
 
     const Frame = struct {
-        v: AutoHashMapUnmanaged(Tok, void),
+        v_offset: usize,
         dv: AutoHashMapUnmanaged([2]Tok, void),
         f: ArrayListUnmanaged(*PyObject), // FHyp
         f_labels: AutoHashMapUnmanaged(Tok, void),
         e: ArrayListUnmanaged(*PyObject), // EHyp
 
-        fn new() Frame {
+        fn new(v_offset: usize) Frame {
             return .{
-                .v = .{},
+                .v_offset = v_offset,
                 .dv = .{},
                 .f = .{},
                 .f_labels = .{},
@@ -35,7 +36,6 @@ const FrameStack = struct {
         }
 
         fn deinit(self: *Frame, ally: Allocator) void {
-            self.v.deinit(ally);
             self.dv.deinit(ally);
             for (self.f.items) |fhyp| py.Py_DecRef(fhyp);
             self.f.deinit(ally);
@@ -49,6 +49,7 @@ const FrameStack = struct {
     arena: ArenaAllocator,
     var_table: StringHashMapUnmanaged(Tok),
     constants: AutoHashMapUnmanaged(Tok, void),
+    vars: AutoArrayHashMapUnmanaged(Tok, void),
     frames: ArrayListUnmanaged(Frame),
 
     const Self = @This();
@@ -59,6 +60,7 @@ const FrameStack = struct {
             .arena = std.heap.ArenaAllocator.init(ally),
             .var_table = .{},
             .constants = .{},
+            .vars = .{},
             .frames = .{},
         };
     }
@@ -67,13 +69,15 @@ const FrameStack = struct {
         const ally = self.ally;
         self.var_table.deinit(ally);
         self.constants.deinit(ally);
+        self.vars.deinit(ally);
         for (self.frames.items) |*fr| fr.deinit(self.ally);
         self.frames.deinit(ally);
         self.arena.deinit();
     }
 
     fn push(self: *Self) !void {
-        try self.frames.append(self.ally, Frame.new());
+        const v_offset = self.vars.count();
+        try self.frames.append(self.ally, Frame.new(v_offset));
     }
 
     fn top_frame(self: Self) !*Frame {
@@ -86,7 +90,8 @@ const FrameStack = struct {
 
     fn pop(self: *Self) !void {
         (try self.top_frame()).deinit(self.ally);
-        _ = self.frames.pop();
+        const old_frame = self.frames.pop();
+        self.vars.shrinkRetainingCapacity(old_frame.v_offset);
     }
 
     fn tok(self: *Self, name: []const u8) !Tok {
@@ -104,10 +109,7 @@ const FrameStack = struct {
     fn lookup_v(self: *Self, v: Tok) !bool {
         if (self.constants.contains(v))
             return error.ConstTreatedAsVar;
-        for (self.frames.items) |fr|
-            if (fr.v.contains(v))
-                return true;
-        return false;
+        return self.vars.contains(v);
     }
 
     fn lookup_v_tok(self: *Self, tk: []const u8) !bool {
@@ -118,7 +120,7 @@ const FrameStack = struct {
         const v = try self.tok(tk);
         if (try self.lookup_v(v))
             return error.DuplicateVar;
-        try (try self.top_frame()).v.putNoClobber(self.ally, v, {});
+        try self.vars.putNoClobber(self.ally, v, {});
     }
 
     fn dbg(self: *Self) void {
@@ -134,13 +136,7 @@ const FrameStack = struct {
             stdout.writeAll("}\n") catch {};
         }
         {
-            stdout.writeAll("frames:\n") catch {};
-            for (self.frames.items) |fr| {
-                var iter = fr.v.iterator();
-                while (iter.next()) |entry|
-                    stdout.print(" {}", .{entry.key_ptr.*}) catch {};
-                stdout.writeAll("\n") catch {};
-            }
+            stdout.writeAll("frames:\n<TODO: reimplement this>") catch {};
         }
     }
 
