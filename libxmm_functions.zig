@@ -47,7 +47,7 @@ const FrameStack = struct {
 
     ally: Allocator,
     arena: ArenaAllocator,
-    var_table: StringHashMapUnmanaged(Tok),
+    intern: StringHashMapUnmanaged(Tok),
     constants: AutoHashMapUnmanaged(Tok, void),
     vars: AutoArrayHashMapUnmanaged(Tok, void),
     frames: ArrayListUnmanaged(Frame),
@@ -58,7 +58,7 @@ const FrameStack = struct {
         return .{
             .ally = ally,
             .arena = std.heap.ArenaAllocator.init(ally),
-            .var_table = .{},
+            .intern = .{},
             .constants = .{},
             .vars = .{},
             .frames = .{},
@@ -67,7 +67,7 @@ const FrameStack = struct {
 
     fn deinit(self: *Self) void {
         const ally = self.ally;
-        self.var_table.deinit(ally);
+        self.intern.deinit(ally);
         self.constants.deinit(ally);
         self.vars.deinit(ally);
         for (self.frames.items) |*fr| fr.deinit(self.ally);
@@ -96,12 +96,12 @@ const FrameStack = struct {
 
     fn tok(self: *Self, name: []const u8) !Tok {
         const ally = self.ally;
-        const slot = try self.var_table.getOrPut(ally, name);
+        const slot = try self.intern.getOrPut(ally, name);
         if (!slot.found_existing) {
             // we have to make a copy since `name` isn't guaranteed to last
             const owned_name = try self.arena.allocator().dupe(u8, name);
             slot.key_ptr.* = owned_name;
-            slot.value_ptr.* = self.var_table.count() - 1;
+            slot.value_ptr.* = self.intern.count() - 1;
         }
         return slot.value_ptr.*;
     }
@@ -126,8 +126,8 @@ const FrameStack = struct {
     fn dbg(self: *Self) void {
         const stdout = std.io.getStdOut().writer();
         {
-            stdout.writeAll("vars: {") catch {};
-            var iter = self.var_table.iterator();
+            stdout.writeAll("intern: {") catch {};
+            var iter = self.intern.iterator();
             var comma: []const u8 = "";
             while (iter.next()) |entry| {
                 stdout.print("{s}{s}={}", .{comma, entry.key_ptr.*, entry.value_ptr.*}) catch {};
