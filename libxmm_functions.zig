@@ -9,12 +9,12 @@ const PyObject = py.PyObject;
 const std = @import("std");
 
 export fn apply_subst(
-    self: [*c]PyObject,
-    args: [*c]PyObject,
-) [*c]PyObject {
+    self: *PyObject,
+    args: *PyObject,
+) ?*PyObject {
     _ = self;
-    var stmt: [*c]PyObject = undefined; // : Stmt
-    var subst: [*c]PyObject = undefined; // : dict[Var, Stmt]
+    var stmt: *PyObject = undefined; // : Stmt
+    var subst: *PyObject = undefined; // : dict[Var, Stmt]
     if (0 == py.PyArg_UnpackTuple(args, "apply_subst", 2, 2, &stmt, &subst))
         return null;
     if (0 == py.PyList_CheckExact(stmt)) {
