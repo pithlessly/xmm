@@ -220,10 +220,6 @@ class FrameStack(list[Frame]):
                           for x, y in itertools.product(varlist, varlist)
                           if x != y)
 
-    def lookup_v(self, tok: Var) -> bool:
-        """Return whether the given token is an active variable."""
-        return any(tok in fr.v for fr in self)
-
     def lookup_d(self, x: Var, y: Var) -> bool:
         """Return whether the given ordered pair of tokens belongs to an
         active disjoint variable statement.
@@ -243,7 +239,7 @@ class FrameStack(list[Frame]):
 
     def find_vars(self, stmt: Stmt) -> set[Var]:
         """Return the set of variables in the given statement."""
-        return {x for x in stmt if self.lookup_v(x)}
+        return {x for x in stmt if self.fs2.lookup_v(x)}
 
     def make_assertion(self, stmt: Stmt) -> Assertion:
         """Return a quadruple (disjoint variable conditions, floating
@@ -252,7 +248,7 @@ class FrameStack(list[Frame]):
         """
         e_hyps = [eh for fr in self for eh in fr.e]
         mand_vars = {tok for hyp in itertools.chain(e_hyps, [stmt])
-                     for tok in hyp if self.lookup_v(tok)}
+                     for tok in hyp if self.fs2.lookup_v(tok)}
         dvs = {(x, y) for fr in self for (x, y)
                in fr.d if x in mand_vars and y in mand_vars}
         f_hyps = []
@@ -273,6 +269,7 @@ class MM:
         """Construct an empty Metamath database."""
         self.constants: set[Const] = set()
         self.fs = FrameStack()
+        self.fs.fs2 = self.fs2 = libxmm.FrameStack()
         self.labels: dict[Label, FullStmt] = {}
         self.begin_label = begin_label
         self.stop_label = stop_label
@@ -283,7 +280,7 @@ class MM:
         if tok in self.constants:
             raise MMError(
                 'Constant already declared: {}'.format(tok))
-        if self.fs.lookup_v(tok):
+        if self.fs2.lookup_v(tok):
             raise MMError(
                 'Trying to declare as a constant an active variable: {}'.format(tok))
         self.constants.add(tok)
@@ -292,18 +289,13 @@ class MM:
         """Add a variable to the frame stack top (that is, the current frame)
         of the database.  Allow local variable declarations.
         """
-        if self.fs.lookup_v(tok):
-            raise MMError('var already declared and active: {}'.format(tok))
-        if tok in self.constants:
-            raise MMError(
-                'var already declared as constant: {}'.format(tok))
-        self.fs[-1].v.add(tok)
+        self.fs2.add_v(tok)
 
     def add_f(self, typecode: Const, var: Var, label: Label) -> None:
         """Add a floating hypothesis (ordered pair (variable, typecode)) to
         the frame stack top (that is, the current frame) of the database.
         """
-        if not self.fs.lookup_v(var):
+        if not self.fs2.lookup_v(var):
             raise MMError('var in $f not declared: {}'.format(var))
         if typecode not in self.constants:
             raise MMError('typecode in $f not declared: {}'.format(typecode))
@@ -327,7 +319,7 @@ class MM:
         stmt = []
         tok = toks.readc()
         while tok and tok != end_token:
-            is_active_var = self.fs.lookup_v(tok)
+            is_active_var = self.fs2.lookup_v(tok)
             if stmttype in {'$d', '$e', '$a', '$p'} and not (
                     tok in self.constants or is_active_var):
                 raise MMError(
@@ -368,6 +360,7 @@ class MM:
         proofs.
         """
         self.fs.push()
+        self.fs2.push()
         label = None
         tok = toks.readc()
         while tok and tok != '$}':
@@ -432,6 +425,7 @@ class MM:
                 raise MMError("Unknown token: '{}'.".format(tok))
             tok = toks.readc()
         self.fs.pop()
+        self.fs2.pop()
 
     def treat_step(self,
                    step: FullStmt,
