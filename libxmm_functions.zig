@@ -230,7 +230,10 @@ fn export_FrameStack_method(
 ) void {
     const receiver_and_params = @typeInfo(@TypeOf(method)).Fn.params;
     const ReturnType = @typeInfo(@TypeOf(method)).Fn.return_type.?;
-    assert(receiver_and_params[0].type.? == *FrameStack);
+    assert(switch (receiver_and_params[0].type.?) {
+        *FrameStack, *const FrameStack => true,
+        else => false,
+    });
     const all_params = receiver_and_params[1..];
     // we iterate through the parameters in two loops, expressed
     // as recursive functions because the accumulators don't have a
@@ -286,7 +289,7 @@ fn export_FrameStack_method(
                         args_tuple,
                     );
                 },
-                else => @compileError("unsupported parameter type: " ++ @typeName(param_type)),
+                else => @compileError(method_name ++ "() has unsupported parameter type: " ++ @typeName(param_type)),
             }
         }
 
