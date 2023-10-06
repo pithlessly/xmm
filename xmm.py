@@ -46,7 +46,7 @@ Stmttype = typing.Literal["$c", "$v", "$f", "$e", "$a", "$p", "$d", "$="]
 StringOption = typing.Optional[str]
 Symbol = typing.Union[Var, Const]
 Stmt = list[Symbol]
-Ehyp = tuple[Stmt]
+Ehyp = Stmt
 Fhyp = tuple[Var, Const]
 Dv = tuple[Var, Var]
 Assertion = tuple[set[Dv], list[Fhyp], list[Ehyp], Stmt]
